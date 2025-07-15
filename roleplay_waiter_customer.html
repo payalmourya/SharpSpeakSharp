@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Roleplay App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-white to-gray-100 min-h-screen py-20">
+  <div class="max-w-4xl mx-auto px-6">
+    <h2 class="text-4xl md:text-5xl font-bold text-gray-800 text-center mb-6">
+      🎭 Interactive Roleplay</h2>
+
+    <div class="mb-4">
+      <label for="scenario" class="block text-lg font-medium mb-2">Choose a Scenario:</label>
+      <select id="scenario" onchange="loadScenario()" class="w-full p-2 border rounded">
+        <option value="restaurant">Waiter & Customer</option>
+        <option value="interview">Job Interview</option>
+        <option value="doctor">Doctor & Patient</option>
+        <option value="shop">Shopkeeper & Customer</option>
+        <option value="airport">Airport Agent & Passenger</option>
+        <option value="classroom">Teacher & Student</option>
+      </select>
+    </div>
+
+    <div class="mb-4">
+      <label class="block text-lg font-medium mb-1">Choose Voice:</label>
+      <select id="voiceSelect" class="w-full p-2 border rounded"></select>
+    </div>
+
+    <div id="role-select" class="flex justify-center gap-4 mb-6"></div>
+
+    <div id="chat-ui" class="hidden bg-white rounded-xl shadow-lg p-6">
+      <div class="flex justify-between items-center mb-4">
+        <p class="text-lg">You are playing as: <span id="role-label" class="font-semibold capitalize"></span></p>
+        <div class="flex gap-2">
+          <button onclick="startConversation()" class="bg-purple-600 text-white py-1 px-3 rounded hover:bg-purple-700">Start</button>
+          <button onclick="downloadChat()" class="bg-gray-600 text-white py-1 px-3 rounded hover:bg-gray-700">💾 Save</button>
+        </div>
+      </div>
+
+      <div id="conversation-box" class="bg-gray-100 rounded p-4 mb-4 h-64 overflow-y-auto space-y-2"></div>
+
+      <div class="flex justify-center">
+        <button onclick="toggleMic()" id="mic-btn" class="bg-red-600 text-white px-6 py-2 rounded hover:bg-red-700">🎤 Speak Now</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let role = '';
+    let scenario = 'restaurant';
+    let conversation = [];
+    let questionIndex = 0;
+    let recognizing = false;
+    let recognition;
+    let selectedVoice = null;
+    let voices = [];
+
+    const scenarios = {
+      restaurant: {
+        aiRole: 'waiter',
+        questions: ["Welcome! Would you like to see the menu or order something to drink?","Would you like to try today's chef's special?","Can I get you anything to drink with that?"]
+      },
+      interview: {
+        aiRole: 'interviewer',
+        questions: ["Can you tell me about yourself?","Why do you want to join our company?","What are your strengths?"]
+      },
+      doctor: {
+        aiRole: 'doctor',
+        questions: ["What brings you in today?","How long have you had these symptoms?","Are you on any medication?"]
+      },
+      shop: {
+        aiRole: 'shopkeeper',
+        questions: ["Welcome! What are you looking for today?","Would you like to try this on?","Can I pack this for you?"]
+      },
+      airport: {
+        aiRole: 'agent',
+        questions: ["Can I see your ticket and passport?","Do you have any check-in luggage?","Your gate is A3. Any questions?"]
+      },
+      classroom: {
+        aiRole: 'teacher',
+        questions: ["Can you explain yesterday's topic?","Did you complete your homework?","Any doubts before we continue?"]
+      }
+    };
+
+    function populateVoices() {
+      voices = speechSynthesis.getVoices();
+      const voiceSelect = document.getElementById('voiceSelect');
+      voiceSelect.innerHTML = '';
+      voices.forEach((voice, i) => {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = `${voice.name} (${voice.lang})`;
+        voiceSelect.appendChild(option);
+      });
+      selectedVoice = voices[0];
+      voiceSelect.onchange = () => selectedVoice = voices[voiceSelect.value];
+    }
+
+    function speakText(text) {
+      if (!text || !selectedVoice) return;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.voice = selectedVoice;
+      speechSynthesis.speak(utterance);
+    }
+
+    function typeText(text, callback) {
+      const aiRole = scenarios[scenario].aiRole;
+      let display = '', i = 0;
+      const interval = setInterval(() => {
+        display += text.charAt(i);
+        updateLastAIMessage(display);
+        i++;
+        if (i >= text.length) {
+          clearInterval(interval);
+          speakText(text);
+          if (callback) callback();
+        }
+      }, 30);
+    }
+
+    function updateLastAIMessage(text) {
+      const box = document.getElementById('conversation-box');
+      const lastMsg = box.querySelector('div:last-child');
+      if (lastMsg) {
+        const speaker = lastMsg.querySelector('strong').textContent.toLowerCase();
+        if (speaker === scenarios[scenario].aiRole) {
+          lastMsg.innerHTML = `<strong class="capitalize">${speaker}:</strong> ${text}`;
+        }
+      }
+    }
+
+    function loadScenario() {
+      scenario = document.getElementById('scenario').value;
+      role = '';
+      conversation = [];
+      questionIndex = 0;
+      document.getElementById('chat-ui').classList.add('hidden');
+      const roleSelect = document.getElementById('role-select');
+      roleSelect.innerHTML = '';
+
+      const aiRole = scenarios[scenario].aiRole;
+      const userRole = aiRole === 'waiter' ? 'customer' : aiRole === 'doctor' ? 'patient' : aiRole === 'shopkeeper' ? 'customer' : aiRole === 'teacher' ? 'student' : aiRole === 'agent' ? 'passenger' : 'candidate';
+
+      [aiRole, userRole].forEach((r) => {
+        const btn = document.createElement('button');
+        btn.textContent = 'Play as ' + r.charAt(0).toUpperCase() + r.slice(1);
+        btn.className = r === aiRole ? "bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700" : "bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700";
+        btn.onclick = () => selectRole(r);
+        roleSelect.appendChild(btn);
+      });
+    }
+
+    function selectRole(selectedRole) {
+      role = selectedRole;
+      document.getElementById('chat-ui').classList.remove('hidden');
+      document.getElementById('role-label').textContent = role;
+    }
+
+    function startConversation() {
+      if (!role || !scenario) return;
+      conversation = [];
+      questionIndex = 0;
+      askNextQuestion();
+    }
+
+    function askNextQuestion() {
+      const aiRole = scenarios[scenario].aiRole;
+      if (questionIndex < scenarios[scenario].questions.length) {
+        const question = scenarios[scenario].questions[questionIndex];
+        conversation.push({ speaker: aiRole, text: question });
+        updateConversation();
+        typeText(question);
+      }
+    }
+
+    function sendMessageFromSpeech(transcript) {
+      if (!transcript.trim()) return;
+      conversation.push({ speaker: role, text: transcript });
+      updateConversation();
+      questionIndex++;
+      setTimeout(askNextQuestion, 1000);
+    }
+
+    function updateConversation() {
+      const box = document.getElementById('conversation-box');
+      box.innerHTML = '';
+      conversation.forEach((msg) => {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `p-2 rounded ${msg.speaker === role ? 'bg-blue-100' : 'bg-green-100'}`;
+        msgDiv.innerHTML = `<strong class="capitalize">${msg.speaker}:</strong> ${msg.text}`;
+        box.appendChild(msgDiv);
+      });
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function toggleMic() {
+      if (!('webkitSpeechRecognition' in window)) return alert('Speech recognition not supported.');
+      if (!recognition) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+        recognition.onresult = (e) => {
+          const transcript = e.results[0][0].transcript;
+          sendMessageFromSpeech(transcript);
+        };
+        recognition.onerror = recognition.onend = () => {
+          recognizing = false;
+          document.getElementById('mic-btn').classList.remove('bg-red-800');
+        };
+      }
+      if (!recognizing) {
+        recognition.start(); recognizing = true;
+        document.getElementById('mic-btn').classList.add('bg-red-800');
+      } else {
+        recognition.stop(); recognizing = false;
+        document.getElementById('mic-btn').classList.remove('bg-red-800');
+      }
+    }
+
+    function downloadChat() {
+      let text = "--- Conversation ---\n";
+      conversation.forEach(c => text += `${c.speaker}: ${c.text}\n`);
+      const blob = new Blob([text], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'chat.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    window.onload = () => {
+      setTimeout(() => {
+        populateVoices();
+      }, 100);
+      loadScenario();
+    };
+  </script>
+</body>
+</html>
